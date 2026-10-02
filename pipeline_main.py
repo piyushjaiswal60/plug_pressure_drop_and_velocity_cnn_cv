@@ -76,7 +76,7 @@ def run_main_pipeline():
     print("Step 1: Extracting metrics from video using 04.py...")
     try:
         unified_module = importlib.import_module("04")
-        video_path = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+        video_path = "C:/Users/piyus/OneDrive/Desktop/pfinal/video/300 lpm.avi"
         roi = config.get('roi')
 
         # Get video properties for the call
@@ -192,7 +192,7 @@ def run_main_pipeline():
             "roi_y": roi[1],
             "roi_w": roi[2],
             "roi_h": roi[3],
-            "px_to_mm": config.get('px_to_mm'),
+            "mm_to_px": config.get('mm_to_px'),
             "Pipe Diameter (mm)": extracted_data["pipe_diameter_mm"],
             "Discharge (L/min)": extracted_data["discharge_lpm"],
             "Initial Height (mm)": results.get('initial_height_mm'),
