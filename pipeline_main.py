@@ -12,6 +12,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 import re
+import glob
 
 def parse_physics_output(stdout):
     """
@@ -76,7 +77,19 @@ def run_main_pipeline():
     print("Step 1: Extracting metrics from video using 04.py...")
     try:
         unified_module = importlib.import_module("04")
-        video_path = "C:/Users/piyus/OneDrive/Desktop/pfinal/video/300 lpm.avi"
+
+        # Dynamic video path selection
+        video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+        videos = glob.glob(os.path.join(video_folder, "*.*"))
+
+        if not videos:
+            print(f"Error: No videos found in {video_folder}")
+            return
+
+        # Pick the first video found in the folder and normalize path for Windows
+        video_path = os.path.normpath(videos[0])
+        print(f"Analyzing video: {os.path.basename(video_path)}")
+
         roi = config.get('roi')
 
         # Get video properties for the call
@@ -173,8 +186,6 @@ def run_main_pipeline():
     # --- EXCEL EXPORT SECTION ---
     save_confirm = input("\nWould you like to save all these results to the raw data Excel file? (y/n): ").strip().lower()
     if save_confirm == 'y':
-        # Construct a flat dictionary for the Excel row
-        # Separate ROI and points as requested: "Every value in new column"
         roi = config.get('roi', [0,0,0,0])
         p1 = config.get('p1', [0,0])
         p2 = config.get('p2', [0,0])
@@ -192,7 +203,6 @@ def run_main_pipeline():
             "roi_y": roi[1],
             "roi_w": roi[2],
             "roi_h": roi[3],
-            "mm_to_px": config.get('mm_to_px'),
             "Pipe Diameter (mm)": extracted_data["pipe_diameter_mm"],
             "Discharge (L/min)": extracted_data["discharge_lpm"],
             "Initial Height (mm)": results.get('initial_height_mm'),
