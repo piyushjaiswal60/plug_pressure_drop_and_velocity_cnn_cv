@@ -12,43 +12,56 @@ def run_setup():
     print("=== Pipeline 1: Setup & Calibration ===\n")
 
     # 1. Run Interactive Calibrator
-    # Note: 00_interactive_calibrator usually has a main() or logic that opens a window.
-    # We import it to ensure the user goes through the ROI selection process.
     print("Step 1: Starting Interactive ROI Selection...")
     try:
         calib_ui = importlib.import_module("00_interactive_calibrator")
-        if hasattr(calib_ui, 'main'):
-            calib_ui.main()
+        # FIX: 00_interactive_calibrator.py does not have a main() function,
+        # and its logic is inside the if __name__ == "__main__" block.
+        # We need to explicitly call the run_calibration function.
+
+        # Automatically find the first video to pass to the calibrator
+        video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead"
+        import glob
+        videos = glob.glob(os.path.join(video_folder, "*.*"))
+        if videos:
+            video_path = videos[0]
+            print(f"Using video: {video_path}")
+            calib_ui.run_calibration(video_path)
         else:
-            # If there's no main(), we assume the script runs logic on import or
-            # we just notify the user to run it manually if it's purely interactive.
-            print("Please ensure you have run 00_interactive_calibrator.py and saved your ROI.")
+            print("Error: No videos found for calibration.")
+            return
     except Exception as e:
         print(f"Error during ROI selection: {e}")
 
     # 2. Perform Spatial Calibration
     print("\nStep 2: Calculating Spatial Calibration...")
     try:
-        calib_logic = importlib.import_module("01_calibration")
-        # We assume 01_calibration has a function to calculate the ratio
-        # If not, we implement the math here based on the known 01_calibration logic.
+        # Read the config saved by 00_interactive_calibrator
         with open("calibration_config.json", "r") as f:
             config = json.load(f)
 
         p1 = np.array(config['p1'])
         p2 = np.array(config['p2'])
         dist_mm = config['dist_mm']
-        px_to_mm = dist_mm / np.linalg.norm(p1 - p2)
 
-        # Update config with the calculated ratio and diameter
+        # Calculation: distance in mm / distance in pixels
+        pixel_dist = np.linalg.norm(p1 - p2)
+        px_to_mm = dist_mm / pixel_dist if pixel_dist != 0 else 0.0
+
+        # FIX: Diameter Calculation
+        # Diameter in pixels is the ROI height (roi[3])
+        roi = config.get('roi', [0, 0, 0, 0])
+        d_px = roi[3]
+        pipe_diameter_mm = d_px * px_to_mm
+
+        # Update config with calculated ratio and diameter
         config['px_to_mm'] = px_to_mm
-        # Diameter is often the ROI height or a specific value from 01_calibration
-        # For now, we save what we have and add placeholders for the user to check
-        config['pipe_diameter_mm'] = config.get('pipe_diameter_mm', 0.0)
+        config['pipe_diameter_mm'] = pipe_diameter_mm
 
         with open("calibration_config.json", "w") as f:
             json.dump(config, f, indent=4)
         print(f"Calibration updated. Scale: {px_to_mm:.4f} mm/px")
+        print(f"Calculated Pipe Diameter: {pipe_diameter_mm:.2f} mm")
     except Exception as e:
         print(f"Error during calibration: {e}")
 
@@ -73,6 +86,7 @@ def run_setup():
         print(f"Error extracting video properties: {e}")
 
     print("\n=== Setup Pipeline Complete ===\n")
+    print("\n=== check calibration_config for the changes ===\n")
 
 if __name__ == "__main__":
     import numpy as np
