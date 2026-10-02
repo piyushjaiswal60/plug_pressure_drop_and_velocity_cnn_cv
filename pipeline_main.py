@@ -149,6 +149,17 @@ def run_main_pipeline():
     print(f"Edge Slope:          {results.get('edge_slope', 0):>7.4f}")
     print("=============================================\n")
 
+    # --- NEW: AUTOMATIC FLOW VERIFICATION FOR EXIT FRAME ---
+    print(f"Generating velocity heatmap for Exit Frame ({results.get('exit_frame')})...")
+    try:
+        test_flow_module = importlib.import_module("test_flow")
+        if test_flow_module.generate_flow_heatmap(video_path, roi, results.get('exit_frame')):
+            print("Heatmap for exit frame generated successfully. Please check 'flow_verification.jpg'.")
+        else:
+            print("Failed to generate heatmap for exit frame.")
+    except Exception as e:
+        print(f"Could not generate exit frame heatmap: {e}")
+
     # 5. Execute 05_sir_formula.py
     print("\nStep 2: Calculating Pressure Drop using 05_sir_formula.py...")
     material = input("Enter material (plastic bead, potash, zeolite): ").strip().lower()
