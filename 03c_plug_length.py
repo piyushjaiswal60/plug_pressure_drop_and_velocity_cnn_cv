@@ -92,7 +92,7 @@ def calculate_plug_metrics(video_path, roi, calibration_config, video_props):
                     current_vel = np.median(valid_v)
                     velocities.append(current_vel)
 
-                    if current_height < 0.9 * max_height:
+                    if current_height < 0.8 * max_height:
                         exit_frame = frame_idx
                         print(f"Bulk plug exit detected at frame {exit_frame} (Height: {current_height}, Max Height: {max_height})")
                         break 
@@ -138,11 +138,17 @@ if __name__ == "__main__":
         exit()
 
     video_utils = importlib.import_module("02_video_utils")
-    test_video = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+    # FIX: Dynamically find the video in the video folder
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
 
-    if not os.path.exists(test_video):
-        print(f"Error: Video file not found at {test_video}")
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
         exit()
+
+    test_video = videos[0]
+    print(f"Using video: {test_video}")
 
     props = video_utils.get_video_properties(test_video)
     test_props = props
