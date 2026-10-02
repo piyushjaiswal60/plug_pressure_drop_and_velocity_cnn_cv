@@ -129,8 +129,6 @@ def calculate_front_angle(video_path, roi, calibration_config, video_props):
     print(f"Analyzing front angle over 5 frames starting from frame {entry_frame}...")
     cap.set(cv2.CAP_PROP_POS_FRAMES, entry_frame)
 
-    angles = []
-    slopes = []
     last_mask = None
     last_frame_rgb = None
     last_points = None
@@ -148,21 +146,6 @@ def calculate_front_angle(video_path, roi, calibration_config, video_props):
         points, blob = get_front_edge_points(flow, mask)
         
         if points.size > 0:
-            X = points[:, 0] * px_to_mm
-            Y = points[:, 1] * px_to_mm
-            
-            # Fit X as a function of Y to completely eliminate RankWarnings for steep angles
-            fit_m, fit_c = np.polyfit(Y, X, 1)
-            
-            # Convert back to standard slope (dY/dX)
-            slope = 1.0 / fit_m if fit_m != 0 else 9999.0
-            
-            # FIX: Apply absolute value to correct for OpenCV's inverted Y-axis
-            angle_deg = abs(np.degrees(np.arctan(slope)))
-            
-            angles.append(angle_deg)
-            slopes.append(slope)
-            
             last_points = points
             last_blob = blob
 
@@ -172,15 +155,21 @@ def calculate_front_angle(video_path, roi, calibration_config, video_props):
 
     cap.release()
 
-    if not angles:
+    if last_points is None or last_points.size == 0:
         print("Could not extract moving front edge points.")
         return None
 
-    final_angle = np.median(angles)
-    final_slope = np.median(slopes)
+    # GUARANTEE MATCH: Calculate angle directly from the final frame's pixel fit
+    px_X = last_points[:, 0]
+    px_Y = last_points[:, 1]
+    
+    fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
+    
+    final_slope = 1.0 / fit_m_px if fit_m_px != 0 else 9999.0
+    final_angle = abs(np.degrees(np.arctan(final_slope)))
 
     # 3. VISUALIZATION
-    if last_mask is not None and last_frame_rgb is not None and last_points is not None:
+    if last_mask is not None and last_frame_rgb is not None:
         plt.figure(figsize=(12, 8))
         plt.imshow(last_frame_rgb)
 
@@ -200,18 +189,15 @@ def calculate_front_angle(video_path, roi, calibration_config, video_props):
         
         plt.imshow(full_overlay)
 
-        px_X = last_points[:, 0]
-        px_Y = last_points[:, 1]
         plt.scatter(px_X + x_roi, px_Y + y_roi, color='blue', s=15, label='Detected Moving Face')
 
         # Fit line in pixel space for plotting
-        fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
         y_range = np.linspace(px_Y.min(), px_Y.max(), 100)
         x_range = fit_m_px * y_range + fit_c_px
 
         plt.plot(x_range + x_roi, y_range + y_roi, color='lime', linewidth=3, label=f'Angle: {final_angle:.2f}°')
         plt.legend(loc='upper right')
-        plt.title(f"Front Edge Fit (Median over 5 frames starting at {entry_frame})")
+        plt.title(f"Front Edge Fit (Final Frame of Ascent Sequence)")
         plt.savefig("angle_verification.jpg")
         print("Visualization saved to 'angle_verification.jpg'")
 
@@ -232,11 +218,17 @@ if __name__ == "__main__":
         exit()
 
     video_utils = importlib.import_module("02_video_utils")
-    test_video = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+    
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
 
-    if not os.path.exists(test_video):
-        print(f"Error: Video file not found at {test_video}")
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
         exit()
+
+    test_video = videos[0]
+    print(f"Using video: {test_video}")
 
     props = video_utils.get_video_properties(test_video)
     test_props = props
