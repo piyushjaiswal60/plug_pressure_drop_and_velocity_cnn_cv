@@ -86,7 +86,7 @@ def run_calibration(video_path):
 
 if __name__ == "__main__":
     # Attempt to find a video automatically in the videos folder
-    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead"
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
     videos = glob.glob(os.path.join(video_folder, "*.*"))
 
     if videos:
