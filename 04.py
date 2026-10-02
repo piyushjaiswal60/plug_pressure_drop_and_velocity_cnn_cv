@@ -95,20 +95,19 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     min_consecutive_frames = 25
     max_height_pixels = 0
     
-    angles = []
-    slopes = []
+    final_angle = 0.0
+    final_slope = 0.0
     last_mask = None
     last_frame_rgb = None
     last_points = None
     last_blob = None
 
-    # Temporary buffer to retroactively calculate the angle on the correct first 5 frames
+    # Temporary buffer to retroactively calculate the angle
     potential_entry_buffer = []
 
     print(f"\nStarting Unified Pipeline (Gate X: {gate_x}, Scale: {px_to_mm:.4f} mm/px)...")
     print("Processing video stream...")
 
-    # FIX: Initialize frame index exactly as the standalone scripts do to ensure identical output frames
     frame_idx = 0
     
     ret, prev_frame = cap.read()
@@ -152,22 +151,24 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                             entry_frame = frame_idx - (min_consecutive_frames - 1)
                             print(f" -> Ascent confirmed entering at frame {entry_frame}")
 
-                            # FIX: Ascent is confirmed! Now retroactively extract the angles 
-                            # strictly from the first 5 frames in our buffer.
-                            for i in range(min(5, len(potential_entry_buffer))):
-                                data = potential_entry_buffer[i]
-                                pts = data['points']
-                                if pts.size > 0:
-                                    X, Y = pts[:, 0] * px_to_mm, pts[:, 1] * px_to_mm
-                                    fit_m, fit_c = np.polyfit(Y, X, 1) 
-                                    slope = 1.0 / fit_m if fit_m != 0 else 9999.0
-                                    angles.append(abs(np.degrees(np.arctan(slope))))
-                                    slopes.append(slope)
+                            # FIX: Ascent is confirmed! Extract the angle strictly from the 
+                            # 5th frame (or last available up to 5) to guarantee visual match.
+                            limit = min(5, len(potential_entry_buffer))
+                            if limit > 0:
+                                data = potential_entry_buffer[limit - 1]
+                                last_points = data['points']
+                                last_blob = data['blob']
+                                last_mask = data['mask']
+                                last_frame_rgb = data['frame_rgb']
+
+                                if last_points is not None and last_points.size > 0:
+                                    px_X = last_points[:, 0]
+                                    px_Y = last_points[:, 1]
                                     
-                                    last_points = pts
-                                    last_blob = data['blob']
-                                    last_mask = data['mask']
-                                    last_frame_rgb = data['frame_rgb']
+                                    fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
+                                    
+                                    final_slope = 1.0 / fit_m_px if fit_m_px != 0 else 9999.0
+                                    final_angle = abs(np.degrees(np.arctan(final_slope)))
 
                             # Clear buffer to save memory for the rest of the video
                             potential_entry_buffer.clear()
@@ -214,9 +215,6 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     length_mm = velocity_mps * transit_time * 1000.0
     max_height_mm = max_height_pixels * px_to_mm
     
-    final_angle = np.median(angles) if angles else 0.0
-    final_slope = np.median(slopes) if slopes else 0.0
-
     if last_mask is not None and last_frame_rgb is not None and last_points is not None:
         plt.figure(figsize=(12, 8))
         plt.imshow(last_frame_rgb)
