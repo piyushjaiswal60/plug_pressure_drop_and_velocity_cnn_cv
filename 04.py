@@ -132,8 +132,9 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
 
                 moving_pixels = gate_mag > 0.5
                 current_height = np.sum(moving_pixels)
+                moving_plug_present = current_height > 0
                 
-                if current_height > 0:
+                if moving_plug_present:
                     
                     if entry_frame is None:
                         # We are building up to 25 frames. Save the geometry in the buffer just in case.
@@ -151,7 +152,7 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                             entry_frame = frame_idx - (min_consecutive_frames - 1)
                             print(f" -> Ascent confirmed entering at frame {entry_frame}")
 
-                            # FIX: Ascent is confirmed! Extract the angle strictly from the 
+                            # Ascent is confirmed! Extract the angle strictly from the 
                             # 5th frame (or last available up to 5) to guarantee visual match.
                             limit = min(5, len(potential_entry_buffer))
                             if limit > 0:
@@ -174,26 +175,26 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                             potential_entry_buffer.clear()
                     
                     if entry_frame is not None:
-                        # Keep tracking the bulk flow metrics exactly as 03c does
+                        # Track the bulk flow metrics exactly as 03c does
                         max_height_pixels = max(max_height_pixels, current_height)
-                        velocities.append(np.median(gate_mag[moving_pixels]))
+                        valid_v = gate_mag[moving_pixels]
+                        velocities.append(np.median(valid_v))
 
-                        if current_height < 0.9 * max_height_pixels:
+                        # Updated: Exactly matching 03c_plug_length.py logic (0.8 threshold & break)
+                        if current_height < 0.8 * max_height_pixels:
                             exit_frame = frame_idx
-                            print(f" -> Bulk plug exit detected at frame {exit_frame}")
+                            print(f" -> Bulk plug exit detected at frame {exit_frame} (Height: {current_height}, Max Height: {max_height_pixels})")
+                            break # Exits the main while True loop immediately to proceed to final height calculation
                 else:
                     if entry_frame is None: 
                         consecutive_frames = 0
                         potential_entry_buffer.clear()
 
-        if exit_frame is not None and entry_frame is not None:
-             print(" -> Core metrics gathered. Skipping to end for final height calculation...")
-             break
-
         prev_frame = curr_frame
         frame_idx += 1
 
     # --- FINAL STATIONARY HEIGHT ---
+    print(" -> Core metrics gathered. Skipping to end for final height calculation...")
     cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
     ret, frame_last = cap.read()
     if ret:
