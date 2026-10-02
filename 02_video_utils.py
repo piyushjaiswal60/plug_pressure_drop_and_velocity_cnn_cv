@@ -43,7 +43,7 @@ def get_video_files(directory):
 if __name__ == "__main__":
     # Test block to verify extraction
     import glob
-    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead"
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
     videos = glob.glob(os.path.join(video_folder, "*.*"))
 
     if videos:
