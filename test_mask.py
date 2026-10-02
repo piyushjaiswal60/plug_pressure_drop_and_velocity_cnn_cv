@@ -15,7 +15,16 @@ def verify_masking():
         return
 
     # 2. Load frames with a gap to increase detectable motion
-    video_path = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
+
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
+        return
+
+    video_path = videos[0]
+    print(f"Using video: {video_path}")
     cap = cv2.VideoCapture(video_path)
 
     # Frame 1
@@ -34,12 +43,11 @@ def verify_masking():
         return
 
     # Import using importlib to avoid SyntaxError with leading zeros
-    masker_module = importlib.import_module("03a_masking")
-    PlugMasker = masker_module.PlugMasker
+    masker_module = importlib.import_module("03a_unet_masker")
+    masker = masker_module.PlugMasker()
 
-    # 3. Create mask using motion differencing
-    masker = PlugMasker()
-    mask = masker.create_mask(frame2, frame1, roi=roi)
+    # 3. Create mask
+    mask = masker.create_mask(frame2, roi=roi)
 
     # 4. Visualization
     x, y, w, h = roi
