@@ -8,7 +8,17 @@ import importlib
 import matplotlib.pyplot as plt
 
 def verify_flow():
-    video_path = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+    # FIX: Use dynamic video path to match pipeline_main and pipeline_setup
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
+
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
+        return
+
+    video_path = os.path.normpath(videos[0])
+    print(f"Analyzing video: {os.path.basename(video_path)}")
 
     try:
         with open("calibration_config.json", "r") as f:
@@ -17,6 +27,7 @@ def verify_flow():
     except FileNotFoundError:
         print("Error: calibration_config.json not found.")
         return
+
 
     try:
         target_frame = int(input("Enter the frame number you want to analyze (e.g., 100): "))
