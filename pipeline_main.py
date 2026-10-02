@@ -2,6 +2,7 @@
 pipeline_main.py
 Automates the full process from video analysis to pressure drop prediction.
 Connects the results of 04.py (Unified Analysis) to 05_sir_formula.py.
+Exports comprehensive raw data to an Excel file.
 """
 
 import os
@@ -9,6 +10,56 @@ import json
 import importlib
 import subprocess
 import numpy as np
+import pandas as pd
+import re
+
+def parse_physics_output(stdout):
+    """
+    Parses the stdout from 05_sir_formula.py to extract numerical values.
+    """
+    data = {}
+    # Patterns for the variables in 05_sir_formula.py
+    patterns = {
+        "U_sf": r"Superficial Air Velocity \(U_sf\): ([\d\.]+)",
+        "Ar": r"Archimedes Number \(Ar\): ([\d\.]+)",
+        "U_par": r"Particle Velocity \(U_par\): ([\d\.]+)",
+        "U_plu": r"Plug Velocity \(U_plu\): ([\d\.]+)",
+        "mu_e": r"Effective Friction Tangent \(mu_e\): ([\d\.]+)",
+        "K": r"Stress Transmission Ratio \(K\): ([\d\.]+)",
+        "epsilon": r"Plug Void Fraction \(epsilon\): ([\d\.]+)",
+        "alpha": r"Stationary Layer Area Fraction \(alpha\): ([\d\.]+)",
+        "part_a": r"Integral Parameter A component \(part_a\): ([\d\.]+)",
+        "B": r"Momentum & Resistance Parameter B: ([\d\.]+)",
+        "Delta_P": r"Total Pressure Drop \(Delta P\): ([\d\.]+)"
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, stdout)
+        if match:
+            data[key] = float(match.group(1))
+        else:
+            data[key] = None
+
+    return data
+
+def save_to_excel(data_row, filename="raw_data.xlsx"):
+    """
+    Appends a row of data to the raw_data.xlsx file.
+    """
+    df_new = pd.DataFrame([data_row])
+
+    if os.path.exists(filename):
+        try:
+            df_existing = pd.read_excel(filename)
+            df_final = pd.concat([df_existing, df_new], ignore_index=True)
+        except Exception as e:
+            print(f"Error reading existing excel file: {e}. Creating new one.")
+            df_final = df_new
+    else:
+        df_final = df_new
+
+    df_final.to_excel(filename, index=False)
+    print(f"Data successfully saved to {filename}")
 
 def run_main_pipeline():
     print("=== Pipeline 2: Analysis & Pressure Prediction ===\n")
@@ -42,16 +93,12 @@ def run_main_pipeline():
         return
 
     # 3. Prepare inputs for 05_sir_formula.py
-    # Mapping 04.py outputs and config to 05.py requirements
-    # 05.py expects: Material, Pipe Dia, Discharge, Plug Length, Front Angle, Stationary height at end
-
-    # Extracted values
     extracted_data = {
         "pipe_diameter_mm": config.get('pipe_diameter_mm'),
         "discharge_lpm": config.get('discharge_lpm'),
         "plug_length_m": results['length_mm'] / 1000.0,
         "front_angle_deg": results['front_angle_deg'],
-        "final_height_mm": results['final_height_mm'] # Stationary height at end frame
+        "final_height_mm": results['final_height_mm']
     }
 
     print("\n--- Extracted Parameters for Pressure Calculation ---")
@@ -68,13 +115,12 @@ def run_main_pipeline():
             if val:
                 extracted_data[key] = float(val)
 
-    # Final check for missing critical values (like diameter)
     for key in extracted_data:
         if extracted_data[key] is None or extracted_data[key] == 0:
             val = input(f"CRITICAL: {key} is missing. Please enter it now: ").strip()
             extracted_data[key] = float(val)
 
-    # --- ADDITION: Show full 04.py metrics before proceeding to physics ---
+    # Show full 04.py metrics
     print("\n=============================================")
     print("         DETAILED ANALYSIS REPORT (04.py)     ")
     print("=============================================")
@@ -90,18 +136,10 @@ def run_main_pipeline():
     print(f"Edge Slope:          {results.get('edge_slope', 0):>7.4f}")
     print("=============================================\n")
 
-    # 5. Execute 05_sir_formula.py via Subprocess
-    # Since 05.py uses input(), we feed the values into stdin.
-    # Expected inputs in 05.py:
-    # 1. Material, 2. Pipe Dia, 3. Discharge, 4. Plug Length, 5. Front Angle, 6. Height
-
+    # 5. Execute 05_sir_formula.py
     print("\nStep 2: Calculating Pressure Drop using 05_sir_formula.py...")
-
-    # Material choice - we assume 'plastic bead' based on current tests,
-    # but we'll ask the user to be safe.
     material = input("Enter material (plastic bead, potash, zeolite): ").strip().lower()
 
-    # Construct the input string (one value per line)
     input_string = "\n".join([
         material,
         str(extracted_data["pipe_diameter_mm"]),
@@ -111,6 +149,7 @@ def run_main_pipeline():
         str(extracted_data["final_height_mm"])
     ]) + "\n"
 
+    physics_results = {}
     try:
         process = subprocess.Popen(
             ["python", "05_sir_formula.py"],
@@ -124,11 +163,61 @@ def run_main_pipeline():
         if stdout:
             print("\n=== FINAL RESULTS FROM PHYSICS MODEL ===")
             print(stdout)
+            physics_results = parse_physics_output(stdout)
         if stderr:
             print(f"Errors during physics calculation: {stderr}")
 
     except Exception as e:
         print(f"Error executing 05_sir_formula.py: {e}")
+
+    # --- EXCEL EXPORT SECTION ---
+    save_confirm = input("\nWould you like to save all these results to the raw data Excel file? (y/n): ").strip().lower()
+    if save_confirm == 'y':
+        # Construct a flat dictionary for the Excel row
+        # Separate ROI and points as requested: "Every value in new column"
+        roi = config.get('roi', [0,0,0,0])
+        p1 = config.get('p1', [0,0])
+        p2 = config.get('p2', [0,0])
+
+        data_row = {
+            "Video Name": os.path.basename(video_path),
+            "Material": material,
+            "FPS": props.get('fps'),
+            "p1_x": p1[0],
+            "p1_y": p1[1],
+            "p2_x": p2[0],
+            "p2_y": p2[1],
+            "dist_mm": config.get('dist_mm'),
+            "roi_x": roi[0],
+            "roi_y": roi[1],
+            "roi_w": roi[2],
+            "roi_h": roi[3],
+            "px_to_mm": config.get('px_to_mm'),
+            "Pipe Diameter (mm)": extracted_data["pipe_diameter_mm"],
+            "Discharge (L/min)": extracted_data["discharge_lpm"],
+            "Initial Height (mm)": results.get('initial_height_mm'),
+            "Final Height (mm)": results.get('final_height_mm'),
+            "Entry Frame": results.get('entry_frame'),
+            "Exit Frame": results.get('exit_frame'),
+            "Transit Time (s)": results.get('transit_time_sec'),
+            "Avg Velocity (m/s)": results.get('velocity_mps'),
+            "Plug Length (mm)": results.get('length_mm'),
+            "Max Dynamic Height (mm)": results.get('max_height_mm'),
+            "Front Angle (deg)": results.get('front_angle_deg'),
+            "Edge Slope": results.get('edge_slope'),
+            "U_sf": physics_results.get("U_sf"),
+            "Ar": physics_results.get("Ar"),
+            "U_par": physics_results.get("U_par"),
+            "U_plu": physics_results.get("U_plu"),
+            "mu_e": physics_results.get("mu_e"),
+            "K": physics_results.get("K"),
+            "epsilon": physics_results.get("epsilon"),
+            "alpha": physics_results.get("alpha"),
+            "part_a": physics_results.get("part_a"),
+            "B": physics_results.get("B"),
+            "Delta P (Pa)": physics_results.get("Delta_P"),
+        }
+        save_to_excel(data_row)
 
     print("\n=== Pipeline 2 Complete ===\n")
 
