@@ -92,11 +92,17 @@ if __name__ == "__main__":
         print("Error: calibration_config.json not found. Please run 00_interactive_calibrator.py first.")
         exit()
 
-    test_video = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
+    # FIX: Dynamically find the video in the video folder
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
 
-    if not os.path.exists(test_video):
-        print(f"Error: Video file not found at {test_video}")
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
         exit()
+
+    test_video = videos[0]
+    print(f"Using video: {test_video}")
 
     results = analyze_stationary_heights(test_video, test_roi, test_calib)
 
