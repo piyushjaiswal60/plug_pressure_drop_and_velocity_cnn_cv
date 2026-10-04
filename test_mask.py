@@ -14,7 +14,7 @@ def verify_masking():
         print("Error: calibration_config.json not found. Run calibrator first.")
         return
 
-    # 2. Load frames with a gap to increase detectable motion
+    # 2. Load video
     video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
     import glob
     videos = glob.glob(os.path.join(video_folder, "*.*"))
@@ -27,38 +27,47 @@ def verify_masking():
     print(f"Using video: {video_path}")
     cap = cv2.VideoCapture(video_path)
 
-    # Frame 1
-    ret1, frame1 = cap.read()
-
-    # Skip 5 frames to make motion more obvious (Frame 1 vs Frame 6)
-    for _ in range(5):
-        cap.grab()
-
-    # Frame 6
-    ret2, frame2 = cap.read()
-    cap.release()
-
-    if not ret1 or not ret2:
-        print("Error: Could not read frames.")
-        return
-
-    # Import using importlib to avoid SyntaxError with leading zeros
+    # Import U-Net Masker
     masker_module = importlib.import_module("03a_unet_masker")
     masker = masker_module.PlugMasker()
 
-    # 3. Create mask
-    mask = masker.create_mask(frame2, roi=roi)
+    while True:
+        try:
+            frame_num = input("\nEnter frame number to see mask (or 'q' to quit): ").strip()
+            if frame_num.lower() == 'q':
+                break
 
-    # 4. Visualization
-    x, y, w, h = roi
-    cropped_orig = frame2[y:y+h, x:x+w]
+            frame_idx = int(frame_num)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
 
-    mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-    comparison = np.hstack((cropped_orig, mask_bgr))
+            if not ret:
+                print(f"Error: Could not read frame {frame_idx}.")
+                continue
 
-    cv2.imwrite("mask_verification.jpg", comparison)
-    print("Success! Saved comparison to mask_verification.jpg")
-    print("Using frame-skip (1 vs 6) and lower threshold to detect slow motion.")
+            mask = masker.create_mask(frame, roi=roi)
+
+            # Visualization
+            x, y, w, h = roi
+            cropped_orig = frame[y:y+h, x:x+w]
+            mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            comparison = np.hstack((cropped_orig, mask_bgr))
+
+            # Add frame number text to the image
+            text = f"Frame: {frame_idx}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(comparison, text, (10, 30), font, 1, (0, 255, 0), 2, cv2.LINE_AA)
+
+            filename = "mask_verification.jpg"
+            cv2.imwrite(filename, comparison)
+            print(f"Success! Saved mask for frame {frame_idx} to {filename}")
+
+        except ValueError:
+            print("Invalid input. Please enter an integer frame number.")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+    cap.release()
 
 if __name__ == "__main__":
     verify_masking()
