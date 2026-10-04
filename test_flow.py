@@ -8,7 +8,10 @@ import importlib
 import matplotlib.pyplot as plt
 
 def generate_flow_heatmap(video_path, roi, target_frame):
-    # FIX: Prevent crash if target_frame is None (e.g., plug didn't exit)
+    """
+    Generates a velocity heatmap for a specific frame.
+    Called by pipeline_main.py or verify_flow() below.
+    """
     if target_frame is None:
         print("Warning: Target frame is None. Cannot generate flow heatmap.")
         return False
@@ -45,7 +48,6 @@ def generate_flow_heatmap(video_path, roi, target_frame):
     heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
 
     x, y, w, h = roi
-    # Safe crop matching masker bounds check
     x, y = max(0, x), max(0, y)
     w = max(1, min(w, frame1.shape[1] - x))
     h = max(1, min(h, frame1.shape[0] - y))
@@ -66,3 +68,38 @@ def generate_flow_heatmap(video_path, roi, target_frame):
     plt.savefig("flow_verification.jpg")
     plt.close()
     return True
+
+def verify_flow():
+    """
+    Standalone interactive mode.
+    """
+    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
+    videos = glob.glob(os.path.join(video_folder, "*.*"))
+
+    if not videos:
+        print(f"Error: No videos found in {video_folder}")
+        return
+
+    video_path = os.path.normpath(videos[0])
+    print(f"Analyzing video: {os.path.basename(video_path)}")
+
+    try:
+        with open("calibration_config.json", "r") as f:
+            config = json.load(f)
+            roi = config['roi']
+    except FileNotFoundError:
+        print("Error: calibration_config.json not found.")
+        return
+
+    try:
+        target_frame = int(input("Enter the frame number you want to analyze (e.g., 100): "))
+    except ValueError:
+        print("Invalid frame number. Please enter an integer.")
+        return
+
+    if generate_flow_heatmap(video_path, roi, target_frame):
+        print("Success! Saved 'flow_verification.jpg'.")
+
+if __name__ == "__main__":
+    verify_flow()
