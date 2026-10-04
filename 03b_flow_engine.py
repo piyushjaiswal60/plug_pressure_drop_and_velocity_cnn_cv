@@ -9,13 +9,12 @@ import cv2
 
 class RAFTFlowEngine:
     def __init__(self, model_type='small', device=None):
-        print("Initializing Robust Farneback Optical Flow Engine...")
+        print("Initializing Robust Farneback Optical Flow Engine (High-Speed Profile)...")
         self.device = device
 
     def compute_flow(self, frame1, frame2, roi=None, mask=None):
         if roi:
             x, y, w, h = roi
-            # Safeguard dimensions
             x, y = max(0, x), max(0, y)
             w = max(1, min(w, frame1.shape[1] - x))
             h = max(1, min(h, frame1.shape[0] - y))
@@ -23,15 +22,12 @@ class RAFTFlowEngine:
             f1 = frame1[y:y+h, x:x+w]
             f2 = frame2[y:y+h, x:x+w]
             
-            # FIX: Only crop mask if it's the size of the full frame. 
-            # If it's already ROI-sized, leave it alone.
             if mask is not None:
                 if mask.shape == frame1.shape[:2]:
                     mask = mask[y:y+h, x:x+w]
         else:
             f1, f2 = frame1, frame2
 
-        # FIX: Catch empty arrays before running OpenCV
         if f1.size == 0 or f2.size == 0 or f1.shape[0] == 0 or f1.shape[1] == 0:
             return None
 
@@ -42,10 +38,13 @@ class RAFTFlowEngine:
         prev_gray = clahe.apply(prev_gray)
         next_gray = clahe.apply(next_gray)
 
+        # HIGH-SPEED OPTIMIZATION: 
+        # Increased levels (8) and winsize (65) to track large frame-to-frame 
+        # displacements in fast-moving plugs without fragmenting the velocity field.
         flow = cv2.calcOpticalFlowFarneback(
             prev_gray, next_gray, None,
-            pyr_scale=0.5, levels=5, winsize=31,
-            iterations=3, poly_n=7, poly_sigma=1.5,
+            pyr_scale=0.5, levels=8, winsize=65,
+            iterations=5, poly_n=7, poly_sigma=1.5,
             flags=0
         )
 
