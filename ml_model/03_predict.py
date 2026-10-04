@@ -1,6 +1,6 @@
 """
 ml_model/03_predict.py
-Interface for predicting pressure drop for new experimental parameters.
+Interface for predicting pressure drop for the most recent video in raw_data.xlsx.
 """
 
 import pandas as pd
@@ -24,7 +24,6 @@ def predict_pressure(params_dict, model_path="pressure_model.pkl"):
         return None
 
     # Convert input dictionary to DataFrame
-    # The columns MUST be in the exact order as the training set
     df_input = pd.DataFrame([params_dict])
 
     try:
@@ -38,25 +37,63 @@ def predict_pressure(params_dict, model_path="pressure_model.pkl"):
 if __name__ == "__main__":
     print("--- Plug Flow Pressure Drop Predictor ---")
 
-    # Example input - in a real scenario, these could come from pipeline_main's output
-    # Replace these with actual values for testing
-    test_params = {
-        "Material": "plastic bead",
-        "Pipe Diameter (mm)": 55.98,
-        "Discharge (L/min)": 450.0,
-        "Initial Height (mm)": 13.76,
-        "Final Height (mm)": 20.10,
-        "Max Dynamic Height (mm)": 55.62,
-        "Plug Length (mm)": 296.63,
-        "Avg Velocity (m/s)": 1.58,
-        "Front Angle (deg)": 44.38
+    # 1. Load the most recent data from raw_data.xlsx
+    raw_data_path = "raw_data.xlsx"
+    if not os.path.exists(raw_data_path):
+        print(f"Error: {raw_data_path} not found. Please run the analysis pipeline first.")
+        exit()
+
+    try:
+        df_raw = pd.read_excel(raw_data_path)
+        if df_raw.empty:
+            print("Error: raw_data.xlsx is empty.")
+            exit()
+
+        # Get the last row (most recent video)
+        last_row = df_raw.iloc[-1]
+        video_name = last_row.get('Video Name', 'Unknown')
+        print(f"\nDetected most recent video: {video_name}")
+    except Exception as e:
+        print(f"Error reading raw_data.xlsx: {e}")
+        exit()
+
+    # 2. Extract only the features needed by the model
+    # These must match the order and names used in 01_data_cleaning.py
+    required_features = {
+        "Material": last_row.get("Material"),
+        "Pipe Diameter (mm)": last_row.get("Pipe Diameter (mm)"),
+        "Discharge (L/min)": last_row.get("Discharge (L/min)"),
+        "Initial Height (mm)": last_row.get("Initial Height (mm)"),
+        "Final Height (mm)": last_row.get("Final Height (mm)"),
+        "Max Dynamic Height (mm)": last_row.get("Max Dynamic Height (mm)"),
+        "Plug Length (mm)": last_row.get("Plug Length (mm)"),
+        "Avg Velocity (m/s)": last_row.get("Avg Velocity (m/s)"),
+        "Front Angle (deg)": last_row.get("Front Angle (deg)")
     }
 
-    print("\nInput Parameters:")
-    for k, v in test_params.items():
+    print("\n--- Current Features for Prediction ---")
+    for k, v in required_features.items():
         print(f"  {k}: {v}")
+    print("---------------------------------------")
 
-    pred = predict_pressure(test_params)
+    # 3. User Verification and Manual Override
+    confirm = input("\nAre these values correct? (y/n): ").strip().lower()
+    if confirm == 'n':
+        print("\nPlease enter the correct values (leave blank to keep existing value):")
+        for key in required_features:
+            val = input(f"Enter {key} [{required_features[key]}]: ").strip()
+            if val:
+                # Try to convert to float if it's not the Material column
+                if key != "Material":
+                    try:
+                        required_features[key] = float(val)
+                    except ValueError:
+                        print("Invalid number. Keeping previous value.")
+                else:
+                    required_features[key] = val
+
+    # 4. Run Prediction
+    pred = predict_pressure(required_features)
 
     if pred is not None:
         print(f"\nPredicted Total Pressure Drop (Delta P): {pred:.2f} Pa")
