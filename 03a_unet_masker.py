@@ -75,36 +75,31 @@ class PlugMasker:
             raise
 
     def create_mask(self, frame, roi=None):
-        """
-        Processes a BGR frame and returns a binary mask of the plug.
-        roi: (x, y, w, h) if provided, only that region is processed.
-        """
-        # 1. ROI Crop
         if roi:
             x, y, w, h = roi
+            # FIX: Ensure ROI stays strictly within frame dimensions
+            x, y = max(0, x), max(0, y)
+            w = max(1, min(w, frame.shape[1] - x))
+            h = max(1, min(h, frame.shape[0] - y))
             cropped = frame[y:y+h, x:x+w]
         else:
             cropped = frame
 
-        # 2. Pre-process for U-Net (Gray -> Resize -> Normalize)
+        if cropped.size == 0:
+            return np.zeros((256, 256), dtype=np.uint8)
+
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         resized = cv2.resize(gray, (256, 256))
         normalized = resized / 255.0
 
-        # Convert to torch tensor [1, 1, 256, 256]
         input_tensor = torch.tensor(normalized, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)
 
-        # 3. Inference
         with torch.no_grad():
             prediction = self.model(input_tensor)
-            # Convert sigmoid output to binary mask (threshold 0.5)
             mask = (prediction > 0.5).float()
 
-        # 4. Post-process
         mask_np = mask.squeeze().cpu().numpy()
         mask_resized = cv2.resize(mask_np, (cropped.shape[1], cropped.shape[0]))
 
-        # Scale to 0-255 for OpenCV compatibility
         binary_mask = (mask_resized * 255).astype(np.uint8)
-
         return binary_mask

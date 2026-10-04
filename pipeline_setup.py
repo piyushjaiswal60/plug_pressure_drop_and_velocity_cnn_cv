@@ -31,10 +31,15 @@ def run_setup():
             return
     except Exception as e:
         print(f"Error during ROI selection: {e}")
+        return
 
     # 2. Perform Spatial Calibration
     print("\nStep 2: Calculating Spatial Calibration...")
     try:
+        if not os.path.exists("calibration_config.json"):
+            print("Error: calibration_config.json not found. Calibration step was skipped or failed.")
+            return
+            
         with open("calibration_config.json", "r") as f:
             config = json.load(f)
 
@@ -61,6 +66,7 @@ def run_setup():
         print(f"Calculated Pipe Diameter: {pipe_diameter_mm:.2f} mm")
     except Exception as e:
         print(f"Error during calibration: {e}")
+        return
 
     # 3. Extract Video Properties
     print("\nStep 3: Extracting Video Properties...")
@@ -74,14 +80,15 @@ def run_setup():
             video_path = videos[0]
             discharge = video_utils.extract_discharge_rate(os.path.basename(video_path))
 
-            with open("calibration_config.json", "r") as f:
-                config = json.load(f)
+            if discharge is not None:
+                with open("calibration_config.json", "r") as f:
+                    config = json.load(f)
 
-            config['discharge_lpm'] = discharge
+                config['discharge_lpm'] = discharge
 
-            with open("calibration_config.json", "w") as f:
-                json.dump(config, f, indent=4)
-            print(f"Discharge rate {discharge} L/min saved to config.")
+                with open("calibration_config.json", "w") as f:
+                    json.dump(config, f, indent=4)
+                print(f"Discharge rate {discharge} L/min saved to config.")
         else:
             print("Error: No video found for discharge extraction.")
     except Exception as e:

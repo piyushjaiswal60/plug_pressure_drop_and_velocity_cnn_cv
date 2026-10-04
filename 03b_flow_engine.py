@@ -15,23 +15,33 @@ class RAFTFlowEngine:
     def compute_flow(self, frame1, frame2, roi=None, mask=None):
         if roi:
             x, y, w, h = roi
+            # Safeguard dimensions
+            x, y = max(0, x), max(0, y)
+            w = max(1, min(w, frame1.shape[1] - x))
+            h = max(1, min(h, frame1.shape[0] - y))
+            
             f1 = frame1[y:y+h, x:x+w]
             f2 = frame2[y:y+h, x:x+w]
+            
+            # FIX: Only crop mask if it's the size of the full frame. 
+            # If it's already ROI-sized, leave it alone.
             if mask is not None:
-                mask = mask[y:y+h, x:x+w]
+                if mask.shape == frame1.shape[:2]:
+                    mask = mask[y:y+h, x:x+w]
         else:
             f1, f2 = frame1, frame2
+
+        # FIX: Catch empty arrays before running OpenCV
+        if f1.size == 0 or f2.size == 0 or f1.shape[0] == 0 or f1.shape[1] == 0:
+            return None
 
         prev_gray = cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY)
         next_gray = cv2.cvtColor(f2, cv2.COLOR_BGR2GRAY)
 
-        # SOLUTION 1: Apply CLAHE to force contrast on uniform/identical beads
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         prev_gray = clahe.apply(prev_gray)
         next_gray = clahe.apply(next_gray)
 
-        # SOLUTION 2: Increase winsize (31), levels (5), and poly_n (7)
-        # This forces the algorithm to track the broader bulk movement of the plug
         flow = cv2.calcOpticalFlowFarneback(
             prev_gray, next_gray, None,
             pyr_scale=0.5, levels=5, winsize=31,
@@ -40,7 +50,7 @@ class RAFTFlowEngine:
         )
 
         if mask is not None:
-            if mask.shape != flow.shape[:2]:
+            if mask.shape[:2] != flow.shape[:2]:
                 mask = cv2.resize(mask, (flow.shape[1], flow.shape[0]))
             
             mask_bool = (mask > 127)
@@ -52,7 +62,7 @@ class RAFTFlowEngine:
             flow[..., 1] -= v_median
 
         mag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
-        threshold = 0.2  # Set to a safe, low baseline
+        threshold = 0.2
 
         if mask is not None:
             flow[(mag < threshold) | (~mask_bool)] = 0

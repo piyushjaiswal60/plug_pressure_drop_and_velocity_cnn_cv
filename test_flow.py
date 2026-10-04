@@ -8,9 +8,11 @@ import importlib
 import matplotlib.pyplot as plt
 
 def generate_flow_heatmap(video_path, roi, target_frame):
-    """
-    Generates a velocity heatmap for a specific frame.
-    """
+    # FIX: Prevent crash if target_frame is None (e.g., plug didn't exit)
+    if target_frame is None:
+        print("Warning: Target frame is None. Cannot generate flow heatmap.")
+        return False
+
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
     ret1, frame1 = cap.read()
@@ -30,6 +32,9 @@ def generate_flow_heatmap(video_path, roi, target_frame):
     mask = masker.create_mask(frame1, roi=roi)
     flow = engine.compute_flow(frame1, frame2, roi=roi, mask=mask)
 
+    if flow is None:
+        return False
+
     magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
 
     max_val = np.percentile(magnitude, 95)
@@ -40,12 +45,19 @@ def generate_flow_heatmap(video_path, roi, target_frame):
     heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
 
     x, y, w, h = roi
+    # Safe crop matching masker bounds check
+    x, y = max(0, x), max(0, y)
+    w = max(1, min(w, frame1.shape[1] - x))
+    h = max(1, min(h, frame1.shape[0] - y))
+    
     cropped = frame1[y:y+h, x:x+w]
     cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
 
     overlay = cropped_rgb.copy()
     active_pixels = mask > 127
-    overlay[active_pixels] = cv2.addWeighted(cropped_rgb, 0.6, heatmap_rgb, 0.4, 0)[active_pixels]
+    
+    if overlay.shape[:2] == heatmap_rgb.shape[:2] == active_pixels.shape:
+        overlay[active_pixels] = cv2.addWeighted(cropped_rgb, 0.6, heatmap_rgb, 0.4, 0)[active_pixels]
 
     plt.figure(figsize=(10, 10))
     plt.imshow(overlay)
@@ -54,38 +66,3 @@ def generate_flow_heatmap(video_path, roi, target_frame):
     plt.savefig("flow_verification.jpg")
     plt.close()
     return True
-
-def verify_flow():
-    # Existing interactive logic...
-    # (Keep existing code, but we'll call generate_flow_heatmap from pipeline_main)
-    video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
-    import glob
-    videos = glob.glob(os.path.join(video_folder, "*.*"))
-
-    if not videos:
-        print(f"Error: No videos found in {video_folder}")
-        return
-
-    video_path = os.path.normpath(videos[0])
-    print(f"Analyzing video: {os.path.basename(video_path)}")
-
-    try:
-        with open("calibration_config.json", "r") as f:
-            config = json.load(f)
-            roi = config['roi']
-    except FileNotFoundError:
-        print("Error: calibration_config.json not found.")
-        return
-
-    try:
-        target_frame = int(input("Enter the frame number you want to analyze (e.g., 100): "))
-    except ValueError:
-        print("Invalid frame number. Please enter an integer.")
-        return
-
-    if generate_flow_heatmap(video_path, roi, target_frame):
-        print("Success! Saved 'flow_verification.jpg'.")
-
-
-if __name__ == "__main__":
-    verify_flow()

@@ -15,11 +15,7 @@ import re
 import glob
 
 def parse_physics_output(stdout):
-    """
-    Parses the stdout from 05_sir_formula.py to extract numerical values.
-    """
     data = {}
-    # Patterns for the variables in 05_sir_formula.py
     patterns = {
         "U_sf": r"Superficial Air Velocity \(U_sf\): ([\d\.]+)",
         "Ar": r"Archimedes Number \(Ar\): ([\d\.]+)",
@@ -36,19 +32,12 @@ def parse_physics_output(stdout):
 
     for key, pattern in patterns.items():
         match = re.search(pattern, stdout)
-        if match:
-            data[key] = float(match.group(1))
-        else:
-            data[key] = None
+        data[key] = float(match.group(1)) if match else None
 
     return data
 
 def save_to_excel(data_row, filename="raw_data.xlsx"):
-    """
-    Appends a row of data to the raw_data.xlsx file.
-    """
     df_new = pd.DataFrame([data_row])
-
     if os.path.exists(filename):
         try:
             df_existing = pd.read_excel(filename)
@@ -65,7 +54,6 @@ def save_to_excel(data_row, filename="raw_data.xlsx"):
 def run_main_pipeline():
     print("=== Pipeline 2: Analysis & Pressure Prediction ===\n")
 
-    # 1. Load Calibration Config
     try:
         with open("calibration_config.json", "r") as f:
             config = json.load(f)
@@ -73,12 +61,9 @@ def run_main_pipeline():
         print("Error: calibration_config.json not found. Please run pipeline_setup.py first.")
         return
 
-    # 2. Perform Unified Analysis (from 04.py)
     print("Step 1: Extracting metrics from video using 04.py...")
     try:
         unified_module = importlib.import_module("04")
-
-        # Dynamic video path selection
         video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
         videos = glob.glob(os.path.join(video_folder, "*.*"))
 
@@ -86,17 +71,13 @@ def run_main_pipeline():
             print(f"Error: No videos found in {video_folder}")
             return
 
-        # Pick the first video found in the folder and normalize path for Windows
         video_path = os.path.normpath(videos[0])
         print(f"Analyzing video: {os.path.basename(video_path)}")
 
         roi = config.get('roi')
-
-        # Get video properties for the call
         video_utils = importlib.import_module("02_video_utils")
         props = video_utils.get_video_properties(video_path)
 
-        # Run the analysis
         results = unified_module.run_unified_analysis(video_path, roi, config, props)
         if not results:
             print("Error: Analysis failed to produce results.")
@@ -105,13 +86,12 @@ def run_main_pipeline():
         print(f"Error running 04.py: {e}")
         return
 
-    # 3. Prepare inputs for 05_sir_formula.py
     extracted_data = {
-        "pipe_diameter_mm": config.get('pipe_diameter_mm'),
-        "discharge_lpm": config.get('discharge_lpm'),
-        "plug_length_m": results['length_mm'] / 1000.0,
-        "front_angle_deg": results['front_angle_deg'],
-        "final_height_mm": results['final_height_mm']
+        "pipe_diameter_mm": config.get('pipe_diameter_mm', 0),
+        "discharge_lpm": config.get('discharge_lpm', 0),
+        "plug_length_m": results.get('length_mm', 0) / 1000.0,
+        "front_angle_deg": results.get('front_angle_deg', 0),
+        "final_height_mm": results.get('final_height_mm', 0)
     }
 
     print("\n--- Extracted Parameters for Pressure Calculation ---")
@@ -119,7 +99,6 @@ def run_main_pipeline():
         print(f"{key}: {val}")
     print("---------------------------------------------------\n")
 
-    # 4. User Verification and Manual Override
     confirm = input("Are these values correct, or do you need to feed any manually? (y/n): ").strip().lower()
     if confirm == 'n':
         print("\nPlease enter the correct values (leave blank to keep extracted value):")
@@ -133,7 +112,6 @@ def run_main_pipeline():
             val = input(f"CRITICAL: {key} is missing. Please enter it now: ").strip()
             extracted_data[key] = float(val)
 
-    # Show full 04.py metrics
     print("\n=============================================")
     print("         DETAILED ANALYSIS REPORT (04.py)     ")
     print("=============================================")
@@ -149,7 +127,6 @@ def run_main_pipeline():
     print(f"Edge Slope:          {results.get('edge_slope', 0):>7.4f}")
     print("=============================================\n")
 
-    # --- NEW: AUTOMATIC FLOW VERIFICATION FOR EXIT FRAME ---
     print(f"Generating velocity heatmap for Exit Frame ({results.get('exit_frame')})...")
     try:
         test_flow_module = importlib.import_module("test_flow")
@@ -160,7 +137,6 @@ def run_main_pipeline():
     except Exception as e:
         print(f"Could not generate exit frame heatmap: {e}")
 
-    # 5. Execute 05_sir_formula.py
     print("\nStep 2: Calculating Pressure Drop using 05_sir_formula.py...")
     material = input("Enter material (plastic bead, potash, zeolite): ").strip().lower()
 
@@ -194,10 +170,8 @@ def run_main_pipeline():
     except Exception as e:
         print(f"Error executing 05_sir_formula.py: {e}")
 
-    # --- EXCEL EXPORT SECTION ---
     save_confirm = input("\nWould you like to save all these results to the raw data Excel file? (y/n): ").strip().lower()
     if save_confirm == 'y':
-        roi = config.get('roi', [0,0,0,0])
         p1 = config.get('p1', [0,0])
         p2 = config.get('p2', [0,0])
 
@@ -205,15 +179,9 @@ def run_main_pipeline():
             "Video Name": os.path.basename(video_path),
             "Material": material,
             "FPS": props.get('fps'),
-            "p1_x": p1[0],
-            "p1_y": p1[1],
-            "p2_x": p2[0],
-            "p2_y": p2[1],
+            "p1_x": p1[0], "p1_y": p1[1], "p2_x": p2[0], "p2_y": p2[1],
             "dist_mm": config.get('dist_mm'),
-            "roi_x": roi[0],
-            "roi_y": roi[1],
-            "roi_w": roi[2],
-            "roi_h": roi[3],
+            "roi_x": roi[0], "roi_y": roi[1], "roi_w": roi[2], "roi_h": roi[3],
             "Pipe Diameter (mm)": extracted_data["pipe_diameter_mm"],
             "Discharge (L/min)": extracted_data["discharge_lpm"],
             "Initial Height (mm)": results.get('initial_height_mm'),

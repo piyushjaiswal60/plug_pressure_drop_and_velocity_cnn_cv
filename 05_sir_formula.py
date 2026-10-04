@@ -5,12 +5,12 @@ from scipy import integrate
 # --- Material Profiles ---
 MATERIALS = {
     "plastic bead": {
-        "rho_p": 935.0,       # Particle density (kg/m^3)
-        "rho_b": 528.0,       # Bulk density (kg/m^3)
-        "mu_w": 0.56,         # Wall friction coefficient
-        "phi_e_rad": 0.86,    # Effective internal friction angle (rad)
-        "c_w": 0.0,           # Coefficient of cohesion (Pa)
-        "d_m": 4.20e-3        # Particle diameter (m)
+        "rho_p": 935.0,
+        "rho_b": 528.0,
+        "mu_w": 0.56,
+        "phi_e_rad": 0.86,
+        "c_w": 0.0,
+        "d_m": 4.75e-3
     },
     "potash": {
         "rho_p": 2046.0,
@@ -21,42 +21,37 @@ MATERIALS = {
         "d_m": 1.0e-3
     },
     "zeolite": {
-        "rho_p": 2210.0,      # Particle density from Plug-2 Table 1
-        "d_m": 2.20e-3,        # Particle diameter from Plug-2 Table 1
-        "rho_b": 2000,        # Missing in source paper
-        "mu_w": 0.5,         # Missing in source paper
-        "phi_e_rad": 0.8,    # Missing in source paper
-        "c_w": 0.0            # Assumed 0 for granular
+        "rho_p": 2210.0,
+        "d_m": 2.20e-3,
+        "rho_b": 2000.0,
+        "mu_w": 0.50,
+        "phi_e_rad": 0.80,
+        "c_w": 0.0
     }
 }
 
-# Standard properties
 G = 9.81
-RHO_AIR = 1.204        # Air density at 20C (kg/m^3)
-MU_AIR = 1.825e-5      # Air dynamic viscosity at 20C (Pa.s)
+RHO_AIR = 1.204
+MU_AIR = 1.825e-5
 
 def compute_pressure_drop():
     print("=== Plug-2 Pressure Drop Calculator ===\n")
     
-    # 1. Ask for Material
     mat_choice = input("Enter material (plastic bead, potash, zeolite): ").strip().lower()
     if mat_choice not in MATERIALS:
         print("Invalid material. Exiting.")
         return
     mat = MATERIALS[mat_choice]
     
-    # Fill in missing Zeolite data if selected
     if mat["rho_b"] is None:
-        print("\n[Notice] Zeolite's shear cell properties are missing from the research papers.")
         try:
             mat["rho_b"] = float(input("Enter Zeolite Bulk Density (kg/m^3): "))
             mat["mu_w"] = float(input("Enter Zeolite Wall Friction Coefficient (mu_w): "))
             mat["phi_e_rad"] = float(input("Enter Zeolite Effective Internal Friction Angle (radians): "))
         except ValueError:
-            print("Invalid input. Please enter numerical values.")
+            print("Invalid input.")
             return
 
-    # 2. Ask for Custom User Inputs
     try:
         pipe_d_mm = float(input("Enter pipe diameter (mm): "))
         discharge_lpm = float(input("Enter discharge rate (L/min): "))
@@ -64,7 +59,7 @@ def compute_pressure_drop():
         theta_deg = float(input("Enter plug front angle (degrees): "))
         h_mm = float(input("Enter stationary layer height at end (mm): "))
     except ValueError:
-        print("Invalid input. Please enter numerical values.")
+        print("Invalid input.")
         return
         
     D = pipe_d_mm / 1000.0
@@ -74,7 +69,6 @@ def compute_pressure_drop():
     
     print("\n--- Calculating Intermediate Variables ---")
     
-    # A. Air & Particle Kinematics
     discharge_m3_s = discharge_lpm / 60000.0
     pipe_area = math.pi * (D / 2)**2
     u_sf = discharge_m3_s / pipe_area
@@ -86,11 +80,9 @@ def compute_pressure_drop():
     u_par = u_sf - 0.042 * (ar ** 0.213)
     print(f"Particle Velocity (U_par): {u_par:.4f} m/s")
     
-    # Calculate Plug Velocity
     u_plu = 0.579 + 0.774 * u_par
     print(f"Plug Velocity (U_plu): {u_plu:.4f} m/s")
     
-    # B. Material & Geometric Derived Properties
     mu_e = math.tan(mat["phi_e_rad"])
     k_stress = (1.0 - math.sin(mat["phi_e_rad"])) / (1.0 + math.sin(mat["phi_e_rad"]))
     epsilon = 1.0 - (mat["rho_b"] / mat["rho_p"])
@@ -105,7 +97,6 @@ def compute_pressure_drop():
     alpha = (phi - math.sin(phi)) / (2.0 * math.pi)
     print(f"Stationary Layer Area Fraction (alpha): {alpha:.4f}")
     
-    # C. Model Sub-Parameters A and B
     y_cm = h
     def integrand(y):
         val = y * (D - y)
@@ -122,7 +113,6 @@ def compute_pressure_drop():
     b = term1_b + term2_b + term3_b
     print(f"Momentum & Resistance Parameter B: {b:.2f}")
     
-    # D. Final Pressure Drop Construction
     exp_term = math.exp((4.0 * mat["mu_w"] * k_stress * L) / D)
     num1 = ((4.0 * mat["mu_w"] * k_stress) / D) * b
     num2 = mat["mu_w"] * mat["rho_b"] * G

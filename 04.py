@@ -14,13 +14,10 @@ import importlib
 import json
 import matplotlib.pyplot as plt
 
-# ==========================================
-# HELPER FUNCTIONS 
-# ==========================================
 def calculate_px_to_mm(config):
-    p1 = np.array(config['p1'])
-    p2 = np.array(config['p2'])
-    dist_mm = config['dist_mm']
+    p1 = np.array(config.get('p1', [0,0]))
+    p2 = np.array(config.get('p2', [0,0]))
+    dist_mm = config.get('dist_mm', 0)
     pixel_dist = np.linalg.norm(p1 - p2)
     return dist_mm / pixel_dist if pixel_dist != 0 else 0.0
 
@@ -34,6 +31,9 @@ def get_robust_median_height(mask, px_to_mm):
     return float(np.median(heights) * px_to_mm) if heights else 0.0
 
 def get_front_edge_points(flow, mask):
+    if mask is None or flow is None or mask.size == 0:
+        return np.array([]), np.zeros((1,1), dtype=bool)
+
     mag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
     moving_mask = ((mag > 0.5) & (mask > 127)).astype(np.uint8)
     
@@ -62,11 +62,11 @@ def get_front_edge_points(flow, mask):
             
     return np.array(front_edge), plug_blob
 
-
-# ==========================================
-# MASTER UNIFIED LOOP
-# ==========================================
 def run_unified_analysis(video_path, roi, calibration_config, video_props):
+    if not roi or len(roi) != 4 or roi[2] <= 0 or roi[3] <= 0:
+        print("Error: Invalid ROI. Please run pipeline_setup.py again.")
+        return None
+
     masker_module = importlib.import_module("03a_unet_masker")
     masker = masker_module.PlugMasker()
 
@@ -74,7 +74,7 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     engine = flow_module.RAFTFlowEngine()
 
     px_to_mm = calculate_px_to_mm(calibration_config)
-    fps = video_props['fps']
+    fps = video_props.get('fps', 500.0)
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -84,10 +84,8 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     gate_x = roi[0] + roi[2] // 2
 
-    # --- Initial State Variables ---
     initial_height_mm = 0.0
     final_height_mm = 0.0
-    
     entry_frame = None
     exit_frame = None
     velocities = []
@@ -101,21 +99,17 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     last_frame_rgb = None
     last_points = None
     last_blob = None
-
-    # Temporary buffer to retroactively calculate the angle
     potential_entry_buffer = []
 
     print(f"\nStarting Unified Pipeline (Gate X: {gate_x}, Scale: {px_to_mm:.4f} mm/px)...")
     print("Processing video stream...")
 
     frame_idx = 0
-    
     ret, prev_frame = cap.read()
     if ret:
         first_mask = masker.create_mask(prev_frame, roi=roi)
         initial_height_mm = get_robust_median_height(first_mask, px_to_mm)
     
-    # Single Pass Main Loop
     while True:
         ret, curr_frame = cap.read()
         if not ret: break
@@ -123,7 +117,12 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
         mask = masker.create_mask(curr_frame, roi=roi)
         flow = engine.compute_flow(prev_frame, curr_frame, roi=roi, mask=mask)
 
-        # --- TRANSIT, LENGTH & ANGLE TRACKING ---
+        # Safely handle flow generation failure
+        if flow is None:
+            prev_frame = curr_frame
+            frame_idx += 1
+            continue
+
         if exit_frame is None:
             rel_gate_x = (gate_x - roi[0])
             if 0 <= rel_gate_x < flow.shape[1]:
@@ -135,16 +134,15 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                 moving_plug_present = current_height > 0
                 
                 if moving_plug_present:
-                    
                     if entry_frame is None:
-                        # We are building up to 25 frames. Save the geometry in the buffer just in case.
                         points, blob = get_front_edge_points(flow, mask)
-                        potential_entry_buffer.append({
-                            'points': points,
-                            'blob': blob,
-                            'mask': mask,
-                            'frame_rgb': cv2.cvtColor(curr_frame, cv2.COLOR_BGR2RGB)
-                        })
+                        if points.size > 0:
+                            potential_entry_buffer.append({
+                                'points': points,
+                                'blob': blob,
+                                'mask': mask,
+                                'frame_rgb': cv2.cvtColor(curr_frame, cv2.COLOR_BGR2RGB)
+                            })
                         
                         consecutive_frames += 1
                         
@@ -152,8 +150,6 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                             entry_frame = frame_idx - (min_consecutive_frames - 1)
                             print(f" -> Ascent confirmed entering at frame {entry_frame}")
 
-                            # Ascent is confirmed! Extract the angle strictly from the 
-                            # 5th frame (or last available up to 5) to guarantee visual match.
                             limit = min(5, len(potential_entry_buffer))
                             if limit > 0:
                                 data = potential_entry_buffer[limit - 1]
@@ -165,26 +161,23 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
                                 if last_points is not None and last_points.size > 0:
                                     px_X = last_points[:, 0]
                                     px_Y = last_points[:, 1]
-                                    
-                                    fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
-                                    
-                                    final_slope = 1.0 / fit_m_px if fit_m_px != 0 else 9999.0
-                                    final_angle = abs(np.degrees(np.arctan(final_slope)))
+                                    if len(np.unique(px_Y)) > 1:
+                                        fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
+                                        final_slope = 1.0 / fit_m_px if fit_m_px != 0 else 9999.0
+                                        final_angle = abs(np.degrees(np.arctan(final_slope)))
 
-                            # Clear buffer to save memory for the rest of the video
                             potential_entry_buffer.clear()
                     
                     if entry_frame is not None:
-                        # Track the bulk flow metrics exactly as 03c does
                         max_height_pixels = max(max_height_pixels, current_height)
                         valid_v = gate_mag[moving_pixels]
-                        velocities.append(np.median(valid_v))
+                        if valid_v.size > 0:
+                            velocities.append(np.median(valid_v))
 
-                        # Updated: Exactly matching 03c_plug_length.py logic (0.8 threshold & break)
                         if current_height < 0.8 * max_height_pixels:
                             exit_frame = frame_idx
                             print(f" -> Bulk plug exit detected at frame {exit_frame} (Height: {current_height}, Max Height: {max_height_pixels})")
-                            break # Exits the main while True loop immediately to proceed to final height calculation
+                            break 
                 else:
                     if entry_frame is None: 
                         consecutive_frames = 0
@@ -193,7 +186,6 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
         prev_frame = curr_frame
         frame_idx += 1
 
-    # --- FINAL STATIONARY HEIGHT ---
     print(" -> Core metrics gathered. Skipping to end for final height calculation...")
     cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
     ret, frame_last = cap.read()
@@ -203,9 +195,6 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
 
     cap.release()
 
-    # ==========================================
-    # DATA AGGREGATION & VISUALIZATION
-    # ==========================================
     if entry_frame is None or exit_frame is None:
         print("\nError: Plug transit was not fully captured in this video.")
         return None
@@ -216,29 +205,32 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
     length_mm = velocity_mps * transit_time * 1000.0
     max_height_mm = max_height_pixels * px_to_mm
     
-    if last_mask is not None and last_frame_rgb is not None and last_points is not None:
+    if last_mask is not None and last_frame_rgb is not None and last_points is not None and last_points.size > 0:
         plt.figure(figsize=(12, 8))
         plt.imshow(last_frame_rgb)
 
         x_roi, y_roi, w_roi, h_roi = roi
+        h_mask, w_mask = last_mask.shape
         full_overlay = np.zeros((last_frame_rgb.shape[0], last_frame_rgb.shape[1], 4))
-        roi_overlay = np.zeros((h_roi, w_roi, 4))
         
+        # Safely build ROI overlay
+        roi_overlay = np.zeros((h_mask, w_mask, 4))
         stationary = (last_mask > 127) & (~last_blob)
         roi_overlay[stationary] = [1, 0, 0, 0.3] 
         roi_overlay[last_blob] = [1, 1, 0, 0.4]  
         
-        full_overlay[y_roi:y_roi+h_roi, x_roi:x_roi+w_roi] = roi_overlay
+        full_overlay[y_roi:y_roi+h_mask, x_roi:x_roi+w_mask] = roi_overlay
         plt.imshow(full_overlay)
 
         px_X, px_Y = last_points[:, 0], last_points[:, 1]
         plt.scatter(px_X + x_roi, px_Y + y_roi, color='blue', s=15, label='Detected Moving Face')
 
-        fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
-        y_range = np.linspace(px_Y.min(), px_Y.max(), 100)
-        x_range = fit_m_px * y_range + fit_c_px
-
-        plt.plot(x_range + x_roi, y_range + y_roi, color='lime', linewidth=3, label=f'Angle: {final_angle:.2f}°')
+        if len(np.unique(px_Y)) > 1:
+            fit_m_px, fit_c_px = np.polyfit(px_Y, px_X, 1)
+            y_range = np.linspace(px_Y.min(), px_Y.max(), 100)
+            x_range = fit_m_px * y_range + fit_c_px
+            plt.plot(x_range + x_roi, y_range + y_roi, color='lime', linewidth=3, label=f'Angle: {final_angle:.2f}°')
+            
         plt.legend(loc='upper right')
         plt.title(f"Unified Analysis - Front Edge Fit (Frame {entry_frame})")
         plt.savefig("angle_verification.jpg")
@@ -256,45 +248,3 @@ def run_unified_analysis(video_path, roi, calibration_config, video_props):
         "front_angle_deg": final_angle,
         "edge_slope": final_slope
     }
-
-if __name__ == "__main__":
-    try:
-        with open("calibration_config.json", "r") as f:
-            config = json.load(f)
-            test_roi = config['roi']
-            test_calib = config
-    except FileNotFoundError:
-        print("Error: calibration_config.json not found.")
-        exit()
-
-    video_utils = importlib.import_module("02_video_utils")
-    test_video = "C:/Users/piyus/OneDrive/Desktop/pfinal/plastic_bead/300 lpm.avi"
-
-    if not os.path.exists(test_video):
-        print(f"Error: Video file not found at {test_video}")
-        exit()
-
-    props = video_utils.get_video_properties(test_video)
-    
-    results = run_unified_analysis(test_video, test_roi, test_calib, props)
-
-    if results:
-        print("\n=============================================")
-        print("         UNIFIED PLUG METRICS REPORT         ")
-        print("=============================================")
-        print("[ STATIONARY HEIGHTS ]")
-        print(f"  First Frame Height:  {results['initial_height_mm']:>7.2f} mm")
-        print(f"  Last Frame Height:   {results['final_height_mm']:>7.2f} mm\n")
-        
-        print("[ TRANSIT METRICS ]")
-        print(f"  Entry Frame:         {results['entry_frame']:>7}")
-        print(f"  Exit Frame:          {results['exit_frame']:>7}")
-        print(f"  Transit Time:        {results['transit_time_sec']:>7.4f} s")
-        print(f"  Avg Velocity:        {results['velocity_mps']:>7.4f} m/s")
-        print(f"  Plug Length:         {results['length_mm']:>7.2f} mm")
-        print(f"  Max Dynamic Height:  {results['max_height_mm']:>7.2f} mm\n")
-        
-        print("[ FRONT EDGE GEOMETRY ]")
-        print(f"  Front Angle:         {results['front_angle_deg']:>7.2f} degrees")
-        print(f"  Edge Slope:          {results['edge_slope']:>7.4f}")
-        print("=============================================\n")

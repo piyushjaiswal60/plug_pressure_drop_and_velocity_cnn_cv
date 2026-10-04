@@ -11,9 +11,10 @@ import glob
 # Global variables
 clicked_points = []
 roi_rect = None # [x, y, w, h]
+img = None
 
 def click_event(event, x, y, flags, param):
-    global clicked_points
+    global clicked_points, img
     if event == cv2.EVENT_LBUTTONDOWN:
         clicked_points.append((x, y))
         print(f"Point recorded: ({x}, {y})")
@@ -21,7 +22,10 @@ def click_event(event, x, y, flags, param):
         cv2.imshow("Calibration Tool", img)
 
 def run_calibration(video_path):
-    global img
+    global img, clicked_points, roi_rect
+    clicked_points = []
+    roi_rect = None
+
     cap = cv2.VideoCapture(video_path)
     ret, frame = cap.read()
     cap.release()
@@ -31,7 +35,19 @@ def run_calibration(video_path):
         return
 
     img = frame.copy()
-    cv2.namedWindow("Calibration Tool")
+    h, w = img.shape[:2]
+
+    # FIX: Ensure window fits on standard screens by setting WINDOW_NORMAL
+    cv2.namedWindow("Calibration Tool", cv2.WINDOW_NORMAL)
+    
+    # Calculate a comfortable window size (max height ~ 800 px)
+    target_height = 800
+    if h > target_height:
+        target_width = int(w * (target_height / h))
+        cv2.resizeWindow("Calibration Tool", target_width, target_height)
+    else:
+        cv2.resizeWindow("Calibration Tool", w, h)
+
     cv2.setMouseCallback("Calibration Tool", click_event)
 
     print("\n--- INTERACTIVE CALIBRATION GUIDE ---")
@@ -44,14 +60,15 @@ def run_calibration(video_path):
         cv2.imshow("Calibration Tool", img)
         key = cv2.waitKey(1) & 0xFF
 
-        if key == ord('r'):
-            print("ROI Mode: Click and drag a rectangle over the pipe.")
+        if key == ord('r') or key == ord('R'):
+            print("ROI Mode: Click and drag a rectangle over the pipe. Press ENTER or SPACE to confirm.")
+            # selectROI uses the existing window, so UI scaling remains intact
             roi = cv2.selectROI("Calibration Tool", img, fromCenter=False, showCrosshair=True)
             roi_rect = roi # [x, y, w, h]
             print(f"ROI selected: {roi_rect}")
 
-        elif key == ord('s'):
-            if len(clicked_points) >= 2 and roi_rect is not None:
+        elif key == ord('s') or key == ord('S'):
+            if len(clicked_points) >= 2 and roi_rect is not None and roi_rect[2] > 0:
                 d_px = roi_rect[3]
 
                 config = {
@@ -62,31 +79,34 @@ def run_calibration(video_path):
                     "d_px": d_px
                 }
 
-                # Using a simple input here, but if it fails in CLI,
-                # you might need to edit the JSON directly
                 try:
-                    dist_mm = float(input("Enter the actual distance between the scale points in mm (e.g. 10.0): "))
+                    user_input = input("Enter the actual distance between the scale points in mm (default 10.0): ")
+                    dist_mm = float(user_input) if user_input.strip() else 10.0
                     config["dist_mm"] = dist_mm
                 except EOFError:
                     print("Warning: Could not read input. Using default 10.0mm.")
                     config["dist_mm"] = 10.0
+                except ValueError:
+                    print("Invalid input. Using default 10.0mm.")
+                    config["dist_mm"] = 10.0
 
                 with open("calibration_config.json", "w") as f:
-                    json.dump(config, f)
+                    json.dump(config, f, indent=4)
 
                 print("\nCalibration saved to calibration_config.json!")
                 break
             else:
-                print("Error: Please provide 2 scale points and 1 ROI rectangle.")
+                print("Error: Please provide at least 2 scale points and 1 valid ROI rectangle before saving.")
 
-        elif key == ord('q'):
+        elif key == ord('q') or key == ord('Q'):
+            print("Calibration cancelled by user.")
             break
 
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    # Attempt to find a video automatically in the videos folder
     video_folder = "C:/Users/piyus/OneDrive/Desktop/pfinal/video"
+    import glob
     videos = glob.glob(os.path.join(video_folder, "*.*"))
 
     if videos:
