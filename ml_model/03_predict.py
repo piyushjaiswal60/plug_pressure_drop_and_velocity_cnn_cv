@@ -8,7 +8,7 @@ import numpy as np
 import joblib
 import os
 
-def predict_pressure(params_dict, model_path="pressure_model.pkl"):
+def predict_pressure(params_dict, model_path="models/pressure_model.pkl"):
     """
     Takes a dictionary of parameters and predicts the pressure drop.
     """
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     print("--- Plug Flow Pressure Drop Predictor ---")
 
     # 1. Load the most recent data from raw_data.xlsx
-    raw_data_path = "raw_data.xlsx"
+    raw_data_path = "data/video_extracted_data/raw_data.xlsx"
     if not os.path.exists(raw_data_path):
         print(f"Error: {raw_data_path} not found. Please run the analysis pipeline first.")
         exit()

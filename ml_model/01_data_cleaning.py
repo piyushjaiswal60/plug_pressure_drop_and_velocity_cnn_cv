@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import os
 
-def clean_data(input_file="raw_data.xlsx", output_file="cleaned_data.xlsx"):
+def clean_data(input_file="data/video_extracted_data/raw_data.xlsx", output_file="data/ml_data/cleaned_data.xlsx"):
     print(f"Loading raw data from {input_file}...")
     try:
         df = pd.read_excel(input_file)

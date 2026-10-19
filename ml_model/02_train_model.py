@@ -15,7 +15,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-def train_pressure_model(input_file="cleaned_data.xlsx", model_file="pressure_model.pkl"):
+def train_pressure_model(input_file="data/ml_data/cleaned_data.xlsx", model_file="models/pressure_model.pkl"):
     print(f"Loading cleaned data from {input_file}...")
     try:
         df = pd.read_excel(input_file)
@@ -93,13 +93,16 @@ def train_pressure_model(input_file="cleaned_data.xlsx", model_file="pressure_mo
     plt.title("Actual vs Predicted Pressure Drop")
     plt.legend()
     plt.grid(True)
-    plt.savefig("prediction_plot.jpg")
-    print("Visualization saved to 'prediction_plot.jpg'")
+    plt.savefig("test_results/prediction_plot.jpg")
+    print("Visualization saved to 'test_results/prediction_plot.jpg'")
 
     # 8. Save Model
     try:
+        # Save to the main models folder
         joblib.dump(pipeline, model_file)
-        print(f"Model pipeline saved to {model_file}")
+        # Also save a copy in the ml_model folder for development
+        joblib.dump(pipeline, "ml_model/pressure_model.pkl")
+        print(f"Model pipeline saved to {model_file} and ml_model/pressure_model.pkl")
     except Exception as e:
         print(f"Error saving model: {e}")
 
