@@ -18,8 +18,8 @@ EPOCHS = 100
 BATCH_SIZE = 8
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-IMAGE_DIR = 'dataunettr/new_images_cvat_upload_dataset' 
-MASK_DIR = 'dataunettr/new_mask_cavt'   
+IMAGE_DIR = 'data/unet_data/training_data/new_images_cvat_upload_dataset' 
+MASK_DIR = 'data/unet_data/training_data/new_mask_cavt'   
 
 # Hyperparameter Grid (2 x 2 x 2 x 2 = 16 combinations)
 HYPERPARAMETERS = {
@@ -272,7 +272,7 @@ if __name__ == '__main__':
                 
                 if best_trial_iou > best_overall_iou:
                     best_overall_iou = best_trial_iou
-                    torch.save(model.state_dict(), 'best_optimized_unet.pth')
+                    torch.save(model.state_dict(), 'model/unet/best_optimized_unet.pth')
 
         print(f"Trial {trial} Completed. Best Val IoU: {best_trial_iou:.4f} | Dice: {best_trial_dice:.4f} | B-MAE: {best_trial_mae:.2f} px")
         
