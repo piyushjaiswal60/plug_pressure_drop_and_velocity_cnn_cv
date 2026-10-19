@@ -10,26 +10,23 @@ venv/
 env/
 
 # Large model files
+models/
 *.pth
 *.pt
 *.h5
 *.onnx
 
-# Videos
-*.mp4
-*.avi
-*.mov
-*.mkv
+# Videos and Datasets
+# Ignore everything in data/ but keep video_extracted_data/
+data/*
+!data/video_extracted_data/
 
-# Large datasets
-plastic_bead/
-dataunettr
-
-# Temporary/output files
+# Research and Results
+research/
+test_results/
 temp/
 tmp/
 
 # OS files
 .DS_Store
 Thumbs.db
-research
