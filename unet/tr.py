@@ -272,7 +272,8 @@ if __name__ == '__main__':
                 
                 if best_trial_iou > best_overall_iou:
                     best_overall_iou = best_trial_iou
-                    torch.save(model.state_dict(), 'model/unet/best_optimized_unet.pth')
+                    os.makedirs('models/unet', exist_ok=True)
+                    torch.save(model.state_dict(), 'models/unet/best_optimized_unet.pth')
 
         print(f"Trial {trial} Completed. Best Val IoU: {best_trial_iou:.4f} | Dice: {best_trial_dice:.4f} | B-MAE: {best_trial_mae:.2f} px")
         
