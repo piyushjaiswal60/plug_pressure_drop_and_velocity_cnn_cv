@@ -61,7 +61,7 @@ class UNet(nn.Module):
         return torch.sigmoid(self.out_conv(c5))
 
 class PlugMasker:
-    def __init__(self, weights_path='models/weights/best_plug_segmentation_unet.pth'):
+    def __init__(self, weights_path='models/unet/best_plug_segmentation_unet.pth'):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Initializing U-Net Masker on {self.device}...")
 
