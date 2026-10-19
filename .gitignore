@@ -23,6 +23,7 @@ env/
 
 # Large datasets
 plastic_bead/
+dataunettr
 
 # Temporary/output files
 temp/
