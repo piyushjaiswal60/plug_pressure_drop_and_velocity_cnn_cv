@@ -10,74 +10,98 @@ import torch.nn.functional as F
 import cv2
 import numpy as np
 
-# --- Architecture (Must match tr.py exactly) ---
+# --- Architecture (Synchronized with tr.py) ---
 class DoubleConv(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, dropout_rate):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
+            nn.Dropout2d(dropout_rate) if dropout_rate > 0 else nn.Identity(),
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
     def forward(self, x):
         return self.conv(x)
 
-class UNet(nn.Module):
-    def __init__(self):
+class FlexibleUNet(nn.Module):
+    def __init__(self, base_c, depth, dropout_rate):
         super().__init__()
-        self.conv1 = DoubleConv(1, 32)
-        self.pool1 = nn.MaxPool2d(2)
-        self.conv2 = DoubleConv(32, 64)
-        self.pool2 = nn.MaxPool2d(2)
-        self.conv3 = DoubleConv(64, 128)
-        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.conv4 = DoubleConv(128, 64)
-        self.up2 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.conv5 = DoubleConv(64, 32)
-        self.out_conv = nn.Conv2d(32, 1, 1)
+        self.downs = nn.ModuleList()
+        self.pools = nn.ModuleList()
+        self.ups = nn.ModuleList()
+        self.up_convs = nn.ModuleList()
+
+        # Encoder
+        in_c = 1
+        for i in range(depth):
+            out_c = base_c * (2 ** i)
+            self.downs.append(DoubleConv(in_c, out_c, dropout_rate))
+            self.pools.append(nn.MaxPool2d(2))
+            in_c = out_c
+
+        # Bottleneck
+        self.bottleneck = DoubleConv(in_c, in_c * 2, dropout_rate)
+
+        # Decoder
+        in_c = in_c * 2
+        for i in range(depth - 1, -1, -1):
+            out_c = base_c * (2 ** i)
+            self.ups.append(nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2))
+            self.up_convs.append(DoubleConv(in_c, out_c, dropout_rate))
+            in_c = out_c
+
+        self.out_conv = nn.Conv2d(base_c, 1, kernel_size=1)
 
     def forward(self, x):
-        c1 = self.conv1(x)
-        p1 = self.pool1(c1)
-        c2 = self.conv2(p1)
-        p2 = self.pool2(c2)
-        c3 = self.conv3(p2)
+        skip_connections = []
 
-        u1 = self.up1(c3)
-        diffY = c2.size()[2] - u1.size()[2]
-        diffX = c2.size()[3] - u1.size()[3]
-        u1 = F.pad(u1, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2])
-        concat1 = torch.cat([u1, c2], dim=1)
-        c4 = self.conv4(concat1)
+        for down, pool in zip(self.downs, self.pools):
+            x = down(x)
+            skip_connections.append(x)
+            x = pool(x)
 
-        u2 = self.up2(c4)
-        diffY = c1.size()[2] - u2.size()[2]
-        diffX = c1.size()[3] - u2.size()[3]
-        u2 = F.pad(u2, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2])
-        concat2 = torch.cat([u2, c1], dim=1)
-        c5 = self.conv5(concat2)
+        x = self.bottleneck(x)
+        skip_connections = skip_connections[::-1]
 
-        return torch.sigmoid(self.out_conv(c5))
+        for idx in range(len(self.ups)):
+            x = self.ups[idx](x)
+            skip_x = skip_connections[idx]
+
+            diffY = skip_x.size()[2] - x.size()[2]
+            diffX = skip_x.size()[3] - x.size()[3]
+            x = F.pad(x, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2])
+
+            x = torch.cat([skip_x, x], dim=1)
+            x = self.up_convs[idx](x)
+
+        return torch.sigmoid(self.out_conv(x))
 
 class PlugMasker:
-    def __init__(self, weights_path='models/unet/best_plug_segmentation_unet.pth'):
+    def __init__(self, weights_path='models/unet/best_optimized_unet.pth'):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Initializing U-Net Masker on {self.device}...")
+        print(f"Initializing Optimized U-Net Masker on {self.device}...")
 
-        self.model = UNet().to(self.device)
+        # Best architecture from tuning_results_advanced.csv:
+        # Channels: 64, Depth: 5, Dropout: 0.3
+        self.model = FlexibleUNet(base_c=64, depth=5, dropout_rate=0.3).to(self.device)
         try:
             self.model.load_state_dict(torch.load(weights_path, map_location=self.device))
             self.model.eval()
-            print(f"Model weights loaded successfully from {weights_path}")
+            print(f"Optimized model weights loaded successfully from {weights_path}")
         except FileNotFoundError:
             print(f"Error: Model weights not found at {weights_path}")
+            raise
+        except Exception as e:
+            print(f"Error loading model weights: {e}")
             raise
 
     def create_mask(self, frame, roi=None):
         if roi:
             x, y, w, h = roi
-            # FIX: Ensure ROI stays strictly within frame dimensions
+            # Ensure ROI stays strictly within frame dimensions
             x, y = max(0, x), max(0, y)
             w = max(1, min(w, frame.shape[1] - x))
             h = max(1, min(h, frame.shape[0] - y))
