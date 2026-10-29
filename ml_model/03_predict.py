@@ -8,7 +8,7 @@ import numpy as np
 import joblib
 import os
 
-def predict_pressure(params_dict, model_path="models/pressure_model.pkl"):
+def predict_pressure(params_dict, model_path="models/ml/pressure_model.pkl"):
     """
     Takes a dictionary of parameters and predicts the pressure drop.
     """
