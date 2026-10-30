@@ -92,14 +92,23 @@ def verify_flow():
         print("Error: data/video_extracted_data/calibration_config.json not found.")
         return
 
-    try:
-        target_frame = int(input("Enter the frame number you want to analyze (e.g., 100): "))
-    except ValueError:
-        print("Invalid frame number. Please enter an integer.")
-        return
+    while True:
+        try:
+            user_input = input("\nEnter the frame number you want to analyze (or 'q' to quit): ").strip()
+            if user_input.lower() == 'q':
+                break
 
-    if generate_flow_heatmap(video_path, roi, target_frame):
-        print("Success! Saved 'test_results/flow_verification.jpg'.")
+            target_frame = int(user_input)
+
+            if generate_flow_heatmap(video_path, roi, target_frame):
+                print(f"Success! Saved heatmap for frame {target_frame} to 'test_results/flow_verification.jpg'.")
+            else:
+                print(f"Failed to generate heatmap for frame {target_frame}.")
+
+        except ValueError:
+            print("Invalid input. Please enter an integer frame number.")
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     verify_flow()
